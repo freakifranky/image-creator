@@ -46,7 +46,9 @@ const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
     let usedModel = "";
 
     if (provider === "openai") {
-      const f = new File([buf], "input.png", { type: mimeType });
+      // const f = new File([buf], "input.png", { type: mimeType });
+      const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+const f = new File([u8], "input.png", { type: mime || "image/png" });
       const r = await openaiImageEdit({ prompt, file: f });
       outB64 = r.pngBase64;
       usedModel = "gpt-image-1";
