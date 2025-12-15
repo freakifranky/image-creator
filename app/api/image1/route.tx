@@ -1,0 +1,132 @@
+import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+
+export const runtime = "nodejs";
+
+const PROMPT_IMAGE1_FRESH = `Fresh
+"Use the provided image as the source.
+
+Keep the product itself completely unchanged - do not alter the meat's shape, cut, color, brand, or label.
+
+Disregard or replace all other elements including the original plate, board, stickers, text, and background.
+
+Strictly reconstruct the scene as to follows:
+- Place the fresh items neatly on a round light-wooden plate with a simple rim.
+- Center the wooden plate within a 1:1 square canvas.
+- Change and apply the camera angle to a standard e-commerce fresh items product shot: 30° isometrical perspective, where the plate appears as an almost full circle with slight perspectives.
+- Ensure the plate is fully visible with a small margin, not cropped.
+- Scale the product so it covers approximately 80% of the plate's area, to maintain consistent sizing across SKUs.
+Background and lighting:
+- Replace the background with a pure white (#FFFFFF), completely flat - no gradients or textures.
+- Apply soft, even studio lighting, with a subtle, natural shadow beneath the wooden plate.
+- Maintain a natural food photography aesthetic: slight imperfections, realistic textures, soft film grain, matte highlights, and no plastic-like shine
+Image Resolution
+- 16k resolution ultra high-definition
+- Super clear and super crisp and sharp
+- hyper realistic textures to the fresh items, such as chicken, meats, fish, salmon"`;
+
+const PROMPT_IMAGE1_NONFRESH = `Non-Fresh
+"Use the provided image as the source. Keep the product itself completely unchanged - do not alter the meat's shape, cut, color, brand, or label. Disregard or replace all other elements including the original plate, board, stickers, text, and background.
+
+Reconstruct the scene as to follows:
+- Place the product neatly center of the canvas
+- Center the product image within a 1:1 square canvas
+- Match the camera angle to a standard e-commerce product shot photography: 30° top-front angle, where the product appears as an almost full circle with slight perspectives
+- Ensure the product is fully visible with a small margin, not cropped.
+- Scale the product so it covers approximately 80% of canvas, to maintain consistent sizing across SKUs.
+- detects any watermarks and remove from the product image
+
+Background and lighting:
+- Replace the background with a pure white (#FFFFFF), completely flat - no gradients or textures.
+- Apply soft, even studio lighting, no shadow around the product
+- Maintain a natural product photography aesthetic: slight imperfections, realistic textures, soft film grain, matte highlights
+
+Image Resolution
+- 16k resolution ultra high-definition
+- Super clear and super crisp and sharp
+- hyper realistic textures"`;
+
+async function fetchAsArrayBuffer(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image URL: ${res.status}`);
+  return await res.arrayBuffer();
+}
+
+export async function POST(req: Request) {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return new NextResponse("Missing GEMINI_API_KEY", { status: 500 });
+    }
+
+    const ai = new GoogleGenAI({}); // reads GEMINI_API_KEY from env :contentReference[oaicite:6]{index=6}
+
+    const form = await req.formData();
+    const skuType = String(form.get("skuType") || "fresh");
+    const mode = String(form.get("mode") || "upload");
+
+    let mimeType = "image/png";
+    let buf: Buffer;
+
+    if (mode === "url") {
+      const imageUrl = String(form.get("imageUrl") || "");
+      if (!imageUrl) return new NextResponse("Missing imageUrl", { status: 400 });
+      const ab = await fetchAsArrayBuffer(imageUrl);
+      buf = Buffer.from(ab);
+      // mimeType best-effort; if you want, you can HEAD request and read Content-Type.
+    } else {
+      const file = form.get("file");
+      if (!file || !(file instanceof File)) return new NextResponse("Missing file", { status: 400 });
+      mimeType = file.type || "image/png";
+      buf = Buffer.from(await file.arrayBuffer());
+    }
+
+    const prompt = skuType === "fresh" ? PROMPT_IMAGE1_FRESH : PROMPT_IMAGE1_NONFRESH;
+
+    // Nano Banana Pro = gemini-3-pro-image-preview :contentReference[oaicite:7]{index=7}
+    const resp = await ai.models.generateContent({
+      model: "gemini-3-pro-image-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType,
+                data: buf.toString("base64"),
+              },
+            },
+          ],
+        },
+      ],
+      config: {
+        // 1:1 canvas + higher res output (2K/4K available for Pro Image Preview) :contentReference[oaicite:8]{index=8}
+        imageConfig: {
+          aspectRatio: "1:1",
+          imageSize: "2K",
+        },
+      },
+    });
+
+    // Response contains parts; image bytes come back as inlineData (base64) :contentReference[oaicite:9]{index=9}
+    const parts = resp.candidates?.[0]?.content?.parts || [];
+    const imagePart = parts.find((p: any) => p.inlineData?.data);
+
+    if (!imagePart?.inlineData?.data) {
+      const textPart = parts.find((p: any) => p.text)?.text;
+      return new NextResponse(textPart || "No image returned", { status: 500 });
+    }
+
+    const out = Buffer.from(imagePart.inlineData.data, "base64");
+
+    return new NextResponse(out, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (e: any) {
+    return new NextResponse(e?.message || "Server error", { status: 500 });
+  }
+}
