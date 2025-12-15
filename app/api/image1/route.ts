@@ -4,40 +4,53 @@ import { geminiImageEdit } from "@/lib/gemini";
 import { openaiImageEdit } from "@/lib/openai";
 import { postprocessPng } from "@/lib/postprocess";
 
-
 export const runtime = "nodejs";
 
-async function fetchAsBuffer(url: string) {
+async function fetchAsArrayBuffer(url: string) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image URL: ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  return await res.arrayBuffer();
 }
 
 export async function POST(req: Request) {
   try {
     const form = await req.formData();
+
     const preferPro = String(form.get("preferPro") || "false") === "true";
-const transparentBg = String(form.get("transparentBg") || "false") === "true";
-const maxKb = Number(form.get("maxKb") || 0);
-const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
+    const transparentBg = String(form.get("transparentBg") || "false") === "true";
+    const maxKb = Number(form.get("maxKb") || 0);
+    const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
+
     const skuType = String(form.get("skuType") || "fresh");
     const mode = String(form.get("mode") || "upload");
     const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
 
-
-
     let mimeType = "image/png";
-    let buf: Buffer;
+
+    // Keep BOTH representations:
+    // - inputAb: for OpenAI File([inputAb])
+    // - inputBuf: for Gemini base64 + postprocess
+    let inputAb: ArrayBuffer;
+    let inputBuf: Buffer;
 
     if (mode === "url") {
       const imageUrl = String(form.get("imageUrl") || "");
       if (!imageUrl) return new NextResponse("Missing imageUrl", { status: 400 });
-      buf = await fetchAsBuffer(imageUrl);
+
+      inputAb = await fetchAsArrayBuffer(imageUrl);
+
+      // try to read mime from response? (optional)
+      // We'll default to png if unknown.
+      inputBuf = Buffer.from(inputAb);
     } else {
       const file = form.get("file");
-      if (!file || !(file instanceof File)) return new NextResponse("Missing file", { status: 400 });
+      if (!file || !(file instanceof File)) {
+        return new NextResponse("Missing file", { status: 400 });
+      }
+
       mimeType = file.type || "image/png";
-      buf = Buffer.from(await file.arrayBuffer());
+      inputAb = await file.arrayBuffer();
+      inputBuf = Buffer.from(inputAb);
     }
 
     const prompt = skuType === "fresh" ? PROMPT_IMAGE1_FRESH : PROMPT_IMAGE1_NONFRESH;
@@ -46,9 +59,9 @@ const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
     let usedModel = "";
 
     if (provider === "openai") {
-      // const f = new File([buf], "input.png", { type: mimeType });
-      const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-const f = new File([u8], "input.png", { type: mime || "image/png" });
+      // ✅ Critical fix: construct File from ArrayBuffer/Uint8Array, NOT Node Buffer
+      const f = new File([inputAb], "input.png", { type: mimeType || "image/png" });
+
       const r = await openaiImageEdit({ prompt, file: f });
       outB64 = r.pngBase64;
       usedModel = "gpt-image-1";
@@ -56,32 +69,29 @@ const f = new File([u8], "input.png", { type: mime || "image/png" });
       const r = await geminiImageEdit({
         prompt,
         mimeType,
-        base64: buf.toString("base64"),
+        base64: inputBuf.toString("base64"),
         preferPro,
       });
+
       outB64 = r.pngBase64;
       usedModel = r.usedModel;
     }
 
-let out = Buffer.from(outB64, "base64");
-out = await postprocessPng(out, { maxBytes, transparentBg });
+    let out = Buffer.from(outB64, "base64");
+    out = await postprocessPng(out, { maxBytes, transparentBg });
 
-return new NextResponse(out, {
-  status: 200,
-  headers: {
-    "Content-Type": "image/png",
-    "Cache-Control": "no-store",
-    "X-Used-Model": usedModel || "",
-    "X-Output-Bytes": String(out.length),
-  },
-});
-
-    // const out = Buffer.from(outB64, "base64");
-    // return new NextResponse(out, {
-    //   headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "X-Used-Model": usedModel },
-    // });
+    return new NextResponse(out, {
+      status: 200,
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "no-store",
+        "X-Used-Model": usedModel || "",
+        "X-Output-Bytes": String(out.length),
+      },
+    });
   } catch (e: any) {
     const msg = String(e?.message || "Server error");
+
     if (msg === "OPENAI_ORG_NOT_VERIFIED_FOR_GPT_IMAGE_1") {
       return new NextResponse("403 OpenAI org not verified for gpt-image-1.", { status: 403 });
     }
