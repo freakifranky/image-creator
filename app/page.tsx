@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Provider = "gemini" | "openai";
 type Mode = "upload" | "url";
@@ -48,7 +48,7 @@ export default function Page() {
   const [maxKb2, setMaxKb2] = useState<number>(250);
   const [transparentBg2, setTransparentBg2] = useState<boolean>(false);
 
-  // ✅ new packaging inputs
+  // Packaging inputs
   const [packagingType, setPackagingType] = useState<Packaging>("vacuum");
   const [addIcePack, setAddIcePack] = useState<boolean>(false);
 
@@ -60,6 +60,11 @@ export default function Page() {
 
   const canUseImg1 = useMemo(() => Boolean(img1Blob), [img1Blob]);
   const iceAllowed = packagingType === "vacuum";
+
+  // ✅ Prevent stale "ice pack true" when switching packaging
+  useEffect(() => {
+    if (packagingType !== "vacuum" && addIcePack) setAddIcePack(false);
+  }, [packagingType, addIcePack]);
 
   async function generateImage1() {
     setErr1(null);
@@ -114,11 +119,11 @@ export default function Page() {
       fd.append("maxKb", String(maxKb2));
       fd.append("transparentBg", String(transparentBg2));
 
-      // ✅ new
+      // Packaging controls
       fd.append("packagingType", packagingType);
       fd.append("addIcePack", String(iceAllowed ? addIcePack : false));
 
-      let inputBlob: Blob | null = null;
+      let inputBlob: Blob;
 
       if (useImg1AsInput) {
         if (!img1Blob) throw new Error("Generate Image 1 first (or uncheck and upload Image 2 input).");
@@ -267,7 +272,9 @@ export default function Page() {
                 disabled={busy1}
                 className={classNames(
                   "rounded-lg px-4 py-2 text-sm font-semibold",
-                  busy1 ? "cursor-not-allowed bg-neutral-700 text-neutral-300" : "bg-white text-neutral-900 hover:bg-neutral-200"
+                  busy1
+                    ? "cursor-not-allowed bg-neutral-700 text-neutral-300"
+                    : "bg-white text-neutral-900 hover:bg-neutral-200"
                 )}
               >
                 {busy1 ? "Generating..." : "Generate Image 1"}
@@ -293,11 +300,19 @@ export default function Page() {
                 <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold">Output Image 1</p>
-                    <a href={img1Url} download="image1.png" className="text-sm text-neutral-300 underline hover:text-white">
+                    <a
+                      href={img1Url}
+                      download="image1.png"
+                      className="text-sm text-neutral-300 underline hover:text-white"
+                    >
                       Download
                     </a>
                   </div>
-                  <img src={img1Url} alt="Image 1 output" className="mt-3 aspect-square w-full rounded-lg bg-neutral-900 object-contain" />
+                  <img
+                    src={img1Url}
+                    alt="Image 1 output"
+                    className="mt-3 aspect-square w-full rounded-lg bg-neutral-900 object-contain"
+                  />
                 </div>
               )}
             </div>
@@ -308,7 +323,7 @@ export default function Page() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Step 2 — Generate Image 2</h2>
-                <p className="text-sm text-neutral-400">Packaging/ice-pack transformation using Prompt 2.</p>
+                <p className="text-sm text-neutral-400">Packaging transformation using Prompt 2.</p>
               </div>
 
               <select
@@ -361,7 +376,7 @@ export default function Page() {
               </label>
             </div>
 
-            {/* ✅ Packaging radios (the only new UX piece) */}
+            {/* Packaging radios */}
             <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950/40 p-3">
               <p className="text-sm font-semibold">Packaging type</p>
               <div className="mt-2 grid gap-2">
@@ -472,11 +487,19 @@ export default function Page() {
                 <div className="mt-3 rounded-xl border border-neutral-800 bg-neutral-950 p-3">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-semibold">Output Image 2</p>
-                    <a href={img2Url} download="image2.png" className="text-sm text-neutral-300 underline hover:text-white">
+                    <a
+                      href={img2Url}
+                      download="image2.png"
+                      className="text-sm text-neutral-300 underline hover:text-white"
+                    >
                       Download
                     </a>
                   </div>
-                  <img src={img2Url} alt="Image 2 output" className="mt-3 aspect-square w-full rounded-lg bg-neutral-900 object-contain" />
+                  <img
+                    src={img2Url}
+                    alt="Image 2 output"
+                    className="mt-3 aspect-square w-full rounded-lg bg-neutral-900 object-contain"
+                  />
                 </div>
               )}
             </div>
