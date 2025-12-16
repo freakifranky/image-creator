@@ -117,6 +117,7 @@ export default function Page() {
       fd.append("provider", provider2);
       fd.append("preferPro", String(preferPro2));
       fd.append("maxKb", String(maxKb2));
+      fd.append("skuType", skuType);
       fd.append("transparentBg", String(transparentBg2));
 
       // Packaging controls
