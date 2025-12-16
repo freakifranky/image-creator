@@ -14,15 +14,18 @@ export const runtime = "nodejs";
 
 type PackagingType = "vacuum" | "gembolan" | "mika" | "mesh";
 
-function normalizePackagingType(v: string): PackagingType {
-  if (v === "gembolan" || v === "mika" || v === "mesh" || v === "vacuum") return v;
+function normalizePackagingType(v: unknown): PackagingType {
+  const s = String(v || "").trim();
+  if (s === "gembolan" || s === "mika" || s === "mesh" || s === "vacuum") return s;
   return "vacuum";
 }
 
 function pickPrompt(packagingType: PackagingType, addIcePack: boolean) {
-  // ✅ Ice pack only makes sense for vacuum
+  // Ice pack only for vacuum
   if (packagingType === "vacuum") {
-    return addIcePack ? PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK : PROMPT_IMAGE2_FRESH_VACUUM;
+    return addIcePack
+      ? PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK
+      : PROMPT_IMAGE2_FRESH_VACUUM;
   }
   if (packagingType === "gembolan") return PROMPT_IMAGE2_FRESH_GEMBOLAN;
   if (packagingType === "mika") return PROMPT_IMAGE2_FRESH_MIKA;
@@ -40,7 +43,7 @@ export async function POST(req: Request) {
 
     const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
 
-    const packagingType = normalizePackagingType(String(form.get("packagingType") || "vacuum"));
+    const packagingType = normalizePackagingType(form.get("packagingType"));
     const addIcePackRaw = String(form.get("addIcePack") || "false") === "true";
     const addIcePack = packagingType === "vacuum" ? addIcePackRaw : false;
 
@@ -59,6 +62,7 @@ export async function POST(req: Request) {
     let usedModel = "";
 
     if (provider === "openai") {
+      // IMPORTANT: build File from ArrayBuffer (not Node Buffer)
       const f = new File([inputAb], "input.png", { type: mimeType || "image/png" });
       const r = await openaiImageEdit({ prompt, file: f });
       outB64 = r.pngBase64;
@@ -74,10 +78,11 @@ export async function POST(req: Request) {
       usedModel = r.usedModel;
     }
 
+    // ✅ FIX: do NOT type Buffer with generics
     let out = Buffer.from(outB64, "base64");
     out = await postprocessPng(out, { maxBytes, transparentBg });
 
-    // Buffer -> Uint8Array for NextResponse typing
+    // NextResponse typing: send Uint8Array
     const body = new Uint8Array(out);
 
     return new NextResponse(body, {
