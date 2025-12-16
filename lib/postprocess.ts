@@ -1,5 +1,7 @@
 import sharp from "sharp";
 
+type AnyBuffer = Buffer<ArrayBufferLike>;
+
 export type PostOpts = {
   maxBytes?: number;        // e.g. 250 * 1024
   transparentBg?: boolean;  // true => remove white background
@@ -11,9 +13,9 @@ type RemoveBgOpts = {
 };
 
 async function removeWhiteBackground(
-  input: Buffer,
+  input: AnyBuffer,
   opts: RemoveBgOpts = {}
-): Promise<Buffer> {
+): Promise<AnyBuffer> {
   const TH = opts.threshold ?? 245;
   const SOFT = opts.softness ?? 12;
 
@@ -24,7 +26,7 @@ async function removeWhiteBackground(
   const h = info.height;
   if (!w || !h) return input;
 
-  const rgba = Buffer.from(data); // RGBA
+  const rgba: AnyBuffer = Buffer.from(data); // RGBA
   const mask = new Uint8Array(w * h); // 1 = background (corner-connected white)
 
   const isWhite = (idx: number) => {
@@ -88,13 +90,15 @@ async function removeWhiteBackground(
     }
   }
 
-  return sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+  const out = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
     .png({ compressionLevel: 9, palette: true })
     .toBuffer();
+
+  return Buffer.from(out);
 }
 
-export async function postprocessPng(input: Buffer, opts: PostOpts): Promise<Buffer> {
-  let buf: Buffer = input;
+export async function postprocessPng(input: AnyBuffer, opts: PostOpts): Promise<AnyBuffer> {
+  let buf: AnyBuffer = input;
 
   if (opts.transparentBg) {
     buf = await removeWhiteBackground(buf, { threshold: 245, softness: 12 });
@@ -112,8 +116,8 @@ export async function postprocessPng(input: Buffer, opts: PostOpts): Promise<Buf
         .png({ compressionLevel: 9, palette: true })
         .toBuffer();
 
-      buf = candidate;
-      if (candidate.length <= opts.maxBytes) break;
+      buf = Buffer.from(candidate);
+      if (buf.length <= opts.maxBytes) break;
 
       width = Math.floor(width * 0.85);
     }
