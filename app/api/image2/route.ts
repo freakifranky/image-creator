@@ -5,7 +5,6 @@ import {
   PROMPT_IMAGE2_FRESH_GEMBOLAN,
   PROMPT_IMAGE2_FRESH_MIKA,
   PROMPT_IMAGE2_FRESH_MESH,
-  PROMPT_IMAGE2_NONFRESH,
 } from "@/lib/prompts";
 import { geminiImageEdit } from "@/lib/gemini";
 import { openaiImageEdit } from "@/lib/openai";
@@ -15,27 +14,19 @@ export const runtime = "nodejs";
 
 type PackagingType = "vacuum" | "gembolan" | "mika" | "mesh";
 
-function normalizePackagingType(v: string): PackagingType {
-  if (v === "gembolan" || v === "mika" || v === "mesh" || v === "vacuum") return v;
+function normalizePackaging(v: string): PackagingType {
+  if (v === "gembolan" || v === "mika" || v === "mesh") return v;
   return "vacuum";
 }
 
-function pickPrompt(args: {
-  skuType: "fresh" | "non_fresh";
-  packagingType: PackagingType;
-  addIcePack: boolean;
-}) {
-  const { skuType, packagingType, addIcePack } = args;
-
-  // ✅ Non-fresh uses its own prompt (no packaging options)
-  if (skuType === "non_fresh") return PROMPT_IMAGE2_NONFRESH;
-
-  // ✅ Fresh packaging variants
-  if (packagingType === "vacuum") {
-    return addIcePack ? PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK : PROMPT_IMAGE2_FRESH_VACUUM;
+function pickPrompt(packaging: PackagingType, ice: boolean) {
+  if (packaging === "vacuum") {
+    return ice
+      ? PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK
+      : PROMPT_IMAGE2_FRESH_VACUUM;
   }
-  if (packagingType === "gembolan") return PROMPT_IMAGE2_FRESH_GEMBOLAN;
-  if (packagingType === "mika") return PROMPT_IMAGE2_FRESH_MIKA;
+  if (packaging === "gembolan") return PROMPT_IMAGE2_FRESH_GEMBOLAN;
+  if (packaging === "mika") return PROMPT_IMAGE2_FRESH_MIKA;
   return PROMPT_IMAGE2_FRESH_MESH;
 }
 
@@ -43,78 +34,65 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
 
-    const preferPro = String(form.get("preferPro") || "false") === "true";
-    const transparentBg = String(form.get("transparentBg") || "false") === "true";
+    const provider = String(form.get("provider") || "gemini");
+    const preferPro = form.get("preferPro") === "true";
+    const transparentBg = form.get("transparentBg") === "true";
+
     const maxKb = Number(form.get("maxKb") || 0);
-    const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
+    const maxBytes = maxKb > 0 ? maxKb * 1024 : undefined;
 
-    const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
+    const packaging = normalizePackaging(String(form.get("packagingType")));
+    const addIcePack =
+      packaging === "vacuum" && form.get("addIcePack") === "true";
 
-    // ✅ we need skuType for prompt selection
-    const skuTypeRaw = String(form.get("skuType") || "fresh");
-    const skuType: "fresh" | "non_fresh" = skuTypeRaw === "non_fresh" ? "non_fresh" : "fresh";
-
-    const packagingType = normalizePackagingType(String(form.get("packagingType") || "vacuum"));
-    const addIcePackRaw = String(form.get("addIcePack") || "false") === "true";
-    const addIcePack = skuType === "fresh" && packagingType === "vacuum" ? addIcePackRaw : false;
-
-    const prompt = pickPrompt({ skuType, packagingType, addIcePack });
+    const prompt = pickPrompt(packaging, addIcePack);
 
     const file = form.get("file");
-    if (!file || !(file instanceof File)) {
+    if (!(file instanceof File)) {
       return new NextResponse("Missing file", { status: 400 });
     }
 
-    const mimeType = file.type || "image/png";
-    const inputAb = await file.arrayBuffer();
-    const inputBuf = Buffer.from(inputAb);
+    const inputAB = await file.arrayBuffer();
+    const inputBuf = Buffer.from(inputAB);
 
-    let outB64 = "";
+    let base64 = "";
     let usedModel = "";
 
     if (provider === "openai") {
-      const f = new File([inputAb], "input.png", { type: mimeType || "image/png" });
+      const f = new File([inputAB], "input.png", { type: file.type });
       const r = await openaiImageEdit({ prompt, file: f });
-      outB64 = r.pngBase64;
+      base64 = r.pngBase64;
       usedModel = "gpt-image-1";
     } else {
       const r = await geminiImageEdit({
         prompt,
-        mimeType,
         base64: inputBuf.toString("base64"),
+        mimeType: file.type,
         preferPro,
       });
-      outB64 = r.pngBase64;
+      base64 = r.pngBase64;
       usedModel = r.usedModel;
     }
 
-    let out = Buffer.from(outB64, "base64");
-    out = await postprocessPng(out, { maxBytes, transparentBg });
+    // ✅ DO NOT reassign buffers
+    const original = Buffer.from(base64, "base64");
+    const processed = await postprocessPng(original, {
+      maxBytes,
+      transparentBg,
+    });
 
-    // ✅ safest body for NextResponse (avoids Buffer generic typing headaches)
-    const body = out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength);
-
-    return new NextResponse(body, {
-      status: 200,
+    return new NextResponse(new Uint8Array(processed), {
       headers: {
         "Content-Type": "image/png",
         "Cache-Control": "no-store",
-        "X-Used-Model": usedModel || "",
-        "X-Output-Bytes": String(out.length),
-        "X-Sku-Type": skuType,
-        "X-Packaging-Type": packagingType,
+        "X-Used-Model": usedModel,
+        "X-Packaging-Type": packaging,
         "X-Ice-Pack": String(addIcePack),
       },
     });
   } catch (e: any) {
-    const msg = String(e?.message || "Server error");
-
-    if (msg === "OPENAI_ORG_NOT_VERIFIED_FOR_GPT_IMAGE_1") {
-      return new NextResponse("403 OpenAI org not verified for gpt-image-1.", { status: 403 });
-    }
-    if (msg.includes("overloaded") || msg.includes("UNAVAILABLE")) {
-      return new NextResponse("503 Model overloaded. Please retry.", { status: 503 });
-    }
-    return new NextResponse(msg, { status: 500 });
+    return new NextResponse(String(e?.message || "Server error"), {
+      status: 500,
+    });
   }
 }
