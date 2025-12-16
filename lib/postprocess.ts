@@ -5,61 +5,73 @@ export type PostOpts = {
   transparentBg?: boolean;
 };
 
-type NodeBuf = Buffer<ArrayBufferLike>;
-type Bytes = NodeBuf | Uint8Array;
+async function makeWhiteTransparent(
+  input: Buffer<ArrayBufferLike>
+): Promise<Buffer<ArrayBufferLike>> {
+  const img = sharp(input).ensureAlpha();
+  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
 
-function asBuffer(x: Bytes): NodeBuf {
-  // Buffer.from(Uint8Array) returns Buffer<ArrayBufferLike>
-  return Buffer.isBuffer(x) ? (x as NodeBuf) : (Buffer.from(x) as NodeBuf);
+  const out = Buffer.from(data); // normalize
+  const TH = 248;
+  const SOFT = 6;
+
+  for (let i = 0; i < out.length; i += 4) {
+    const r = out[i];
+    const g = out[i + 1];
+    const b = out[i + 2];
+
+    const nearWhite = r >= TH && g >= TH && b >= TH;
+    if (nearWhite) {
+      out[i + 3] = 0;
+    } else {
+      const avg = (r + g + b) / 3;
+      if (avg >= TH - SOFT) {
+        const a = Math.max(0, Math.min(255, ((TH - avg) / SOFT) * 255));
+        out[i + 3] = Math.min(out[i + 3], Math.round(a));
+      }
+    }
+  }
+
+  return Buffer.from(
+    await sharp(out, {
+      raw: { width: info.width!, height: info.height!, channels: 4 },
+    })
+      .png({ compressionLevel: 9, palette: true })
+      .toBuffer()
+  );
 }
 
-export async function postprocessPng(inputPng: Bytes, opts: PostOpts): Promise<NodeBuf> {
-  let buf: NodeBuf = asBuffer(inputPng);
+export async function postprocessPng(
+  input: Buffer<ArrayBufferLike>,
+  opts: PostOpts
+): Promise<Buffer<ArrayBufferLike>> {
+  let buf: Buffer<ArrayBufferLike> = input;
 
   if (opts.transparentBg) {
-    buf = asBuffer(await makeWhiteTransparent(buf));
+    buf = await makeWhiteTransparent(buf);
   }
 
   if (opts.maxBytes && buf.length > opts.maxBytes) {
-    buf = asBuffer(await compressToMaxBytes(buf, opts.maxBytes));
-  }
+    const meta = await sharp(buf).metadata();
+    let width = Math.min(meta.width ?? 1024, 1400);
+    const minWidth = 256;
 
-  return buf;
-}
+    while (width >= minWidth) {
+      const candidate = Buffer.from(
+        await sharp(buf)
+          .resize({ width, withoutEnlargement: true })
+          .png({ compressionLevel: 9, palette: true, quality: 70 })
+          .toBuffer()
+      );
 
-// IMPORTANT: these return Bytes/Uint8Array/Buffer but are normalized by asBuffer above
-async function makeWhiteTransparent(inputPng: Bytes) {
-  const img = sharp(asBuffer(inputPng)).ensureAlpha();
-  const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
+      if (candidate.length <= opts.maxBytes) {
+        buf = candidate;
+        break;
+      }
 
-  const out = asBuffer(data as any); // normalize
-
-  // ... your pixel loop ...
-
-  return sharp(out, { raw: { width: info.width!, height: info.height!, channels: 4 } })
-    .png({ compressionLevel: 9, palette: true })
-    .toBuffer();
-}
-
-async function compressToMaxBytes(inputPng: Bytes, maxBytes: number) {
-  let buf = asBuffer(await sharp(asBuffer(inputPng)).png({ compressionLevel: 9, palette: true }).toBuffer());
-  if (buf.length <= maxBytes) return buf;
-
-  const meta = await sharp(buf).metadata();
-  let w = Math.min(meta.width ?? 1024, 1400);
-  const minW = 256;
-
-  while (w >= minW) {
-    const candidate = asBuffer(
-      await sharp(buf)
-        .resize({ width: w, withoutEnlargement: true })
-        .png({ compressionLevel: 9, palette: true })
-        .toBuffer()
-    );
-
-    buf = candidate;
-    if (buf.length <= maxBytes) return buf;
-    w = Math.floor(w * 0.85);
+      buf = candidate;
+      width = Math.floor(width * 0.85);
+    }
   }
 
   return buf;
