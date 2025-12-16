@@ -6,7 +6,7 @@ import { postprocessPng } from "@/lib/postprocess";
 
 export const runtime = "nodejs";
 
-async function fetchAsArrayBuffer(url: string) {
+async function fetchAsArrayBuffer(url: string): Promise<ArrayBuffer> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image URL: ${res.status}`);
   return await res.arrayBuffer();
@@ -16,52 +16,42 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
 
-    const preferPro = String(form.get("preferPro") || "false") === "true";
-    const transparentBg = String(form.get("transparentBg") || "false") === "true";
+    const preferPro = form.get("preferPro") === "true";
+    const transparentBg = form.get("transparentBg") === "true";
     const maxKb = Number(form.get("maxKb") || 0);
-    const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
+    const maxBytes = maxKb ? Math.floor(maxKb * 1024) : undefined;
 
     const skuType = String(form.get("skuType") || "fresh");
     const mode = String(form.get("mode") || "upload");
-    const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
+    const provider = String(form.get("provider") || "gemini");
 
     let mimeType = "image/png";
-
-    // Keep BOTH representations:
-    // - inputAb: for OpenAI File([inputAb])
-    // - inputBuf: for Gemini base64 + postprocess
     let inputAb: ArrayBuffer;
-    let inputBuf: Buffer;
+    let inputBuf: Buffer<ArrayBufferLike>;
 
     if (mode === "url") {
       const imageUrl = String(form.get("imageUrl") || "");
       if (!imageUrl) return new NextResponse("Missing imageUrl", { status: 400 });
-
       inputAb = await fetchAsArrayBuffer(imageUrl);
-
-      // try to read mime from response? (optional)
-      // We'll default to png if unknown.
       inputBuf = Buffer.from(inputAb);
     } else {
       const file = form.get("file");
-      if (!file || !(file instanceof File)) {
+      if (!(file instanceof File)) {
         return new NextResponse("Missing file", { status: 400 });
       }
-
-      mimeType = file.type || "image/png";
+      mimeType = file.type || mimeType;
       inputAb = await file.arrayBuffer();
       inputBuf = Buffer.from(inputAb);
     }
 
-    const prompt = skuType === "fresh" ? PROMPT_IMAGE1_FRESH : PROMPT_IMAGE1_NONFRESH;
+    const prompt =
+      skuType === "fresh" ? PROMPT_IMAGE1_FRESH : PROMPT_IMAGE1_NONFRESH;
 
     let outB64 = "";
     let usedModel = "";
 
     if (provider === "openai") {
-      // ✅ Critical fix: construct File from ArrayBuffer/Uint8Array, NOT Node Buffer
-      const f = new File([inputAb], "input.png", { type: mimeType || "image/png" });
-
+      const f = new File([inputAb], "input.png", { type: mimeType });
       const r = await openaiImageEdit({ prompt, file: f });
       outB64 = r.pngBase64;
       usedModel = "gpt-image-1";
@@ -72,12 +62,11 @@ export async function POST(req: Request) {
         base64: inputBuf.toString("base64"),
         preferPro,
       });
-
       outB64 = r.pngBase64;
       usedModel = r.usedModel;
     }
 
-    let out = Buffer.from(outB64, "base64");
+    let out: Buffer<ArrayBufferLike> = Buffer.from(outB64, "base64");
     out = await postprocessPng(out, { maxBytes, transparentBg });
 
     return new NextResponse(out, {
@@ -85,19 +74,11 @@ export async function POST(req: Request) {
       headers: {
         "Content-Type": "image/png",
         "Cache-Control": "no-store",
-        "X-Used-Model": usedModel || "",
+        "X-Used-Model": usedModel,
         "X-Output-Bytes": String(out.length),
       },
     });
   } catch (e: any) {
-    const msg = String(e?.message || "Server error");
-
-    if (msg === "OPENAI_ORG_NOT_VERIFIED_FOR_GPT_IMAGE_1") {
-      return new NextResponse("403 OpenAI org not verified for gpt-image-1.", { status: 403 });
-    }
-    if (msg.includes("overloaded") || msg.includes("UNAVAILABLE")) {
-      return new NextResponse("503 Model overloaded. Please retry.", { status: 503 });
-    }
-    return new NextResponse(msg, { status: 500 });
+    return new NextResponse(String(e?.message || "Server error"), { status: 500 });
   }
 }
