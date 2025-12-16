@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  PROMPT_IMAGE2_VACUUM,
-  PROMPT_IMAGE2_GEMBOLAN,
-  PROMPT_IMAGE2_MIKA,
-  PROMPT_IMAGE2_MESH,
-  PROMPT_IMAGE2_ICEPACK_ADDON,
+  PROMPT_IMAGE2_FRESH_VACUUM,
+  PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK,
+  PROMPT_IMAGE2_FRESH_GEMBOLAN,
+  PROMPT_IMAGE2_FRESH_MIKA,
+  PROMPT_IMAGE2_FRESH_MESH,
 } from "@/lib/prompts";
 import { geminiImageEdit } from "@/lib/gemini";
 import { openaiImageEdit } from "@/lib/openai";
@@ -14,20 +14,19 @@ export const runtime = "nodejs";
 
 type PackagingType = "vacuum" | "gembolan" | "mika" | "mesh";
 
-function pickPrompt(packagingType: PackagingType, addIcePack: boolean) {
-  const base =
-    packagingType === "gembolan"
-      ? PROMPT_IMAGE2_GEMBOLAN
-      : packagingType === "mika"
-      ? PROMPT_IMAGE2_MIKA
-      : packagingType === "mesh"
-      ? PROMPT_IMAGE2_MESH
-      : PROMPT_IMAGE2_VACUUM;
+function normalizePackagingType(v: string): PackagingType {
+  if (v === "gembolan" || v === "mika" || v === "mesh" || v === "vacuum") return v;
+  return "vacuum";
+}
 
-  if (addIcePack && packagingType === "vacuum") {
-    return `${base}\n\n${PROMPT_IMAGE2_ICEPACK_ADDON}`;
+function pickPrompt(packagingType: PackagingType, addIcePack: boolean) {
+  // ✅ Ice pack only makes sense for vacuum
+  if (packagingType === "vacuum") {
+    return addIcePack ? PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK : PROMPT_IMAGE2_FRESH_VACUUM;
   }
-  return base;
+  if (packagingType === "gembolan") return PROMPT_IMAGE2_FRESH_GEMBOLAN;
+  if (packagingType === "mika") return PROMPT_IMAGE2_FRESH_MIKA;
+  return PROMPT_IMAGE2_FRESH_MESH;
 }
 
 export async function POST(req: Request) {
@@ -41,8 +40,9 @@ export async function POST(req: Request) {
 
     const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
 
-    const packagingType = String(form.get("packagingType") || "vacuum") as PackagingType;
-    const addIcePack = String(form.get("addIcePack") || "false") === "true";
+    const packagingType = normalizePackagingType(String(form.get("packagingType") || "vacuum"));
+    const addIcePackRaw = String(form.get("addIcePack") || "false") === "true";
+    const addIcePack = packagingType === "vacuum" ? addIcePackRaw : false;
 
     const prompt = pickPrompt(packagingType, addIcePack);
 
@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
     const mimeType = file.type || "image/png";
     const inputAb = await file.arrayBuffer();
-    const inputBuf: Buffer<ArrayBufferLike> = Buffer.from(inputAb);
+    const inputBuf = Buffer.from(inputAb);
 
     let outB64 = "";
     let usedModel = "";
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
       usedModel = r.usedModel;
     }
 
-    let out: Buffer<ArrayBufferLike> = Buffer.from(outB64, "base64");
+    let out = Buffer.from(outB64, "base64");
     out = await postprocessPng(out, { maxBytes, transparentBg });
 
     // Buffer -> Uint8Array for NextResponse typing
