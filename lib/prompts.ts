@@ -1,135 +1,234 @@
-// lib/prompts.ts
+// =====================================
+// PROMPT 1 — CANONICAL SKU IMAGE
+// =====================================
 
-// --------------------
-// Image 1 — Fresh
-// --------------------
+// ---------------------
+// Prompt 1 — Fresh SKU
+// ---------------------
 export const PROMPT_IMAGE1_FRESH = `
 Use the provided image as the source.
 
-Keep the product itself completely unchanged — do not alter the item’s shape, cut, color, brand, or label.
-Disregard or replace all other elements including the original plate/board, stickers, text, and background.
+Keep the product itself completely unchanged.
+Do NOT alter the item’s shape, cut, color, texture, quantity, or any natural details.
 
-Strictly reconstruct the scene:
-- Place the item neatly on a round light-wooden plate with a simple rim.
+Disregard or replace all other elements including:
+- original plate, tray, bowl, board
+- stickers, labels, text, watermarks
+- background and props
+
+Strictly reconstruct the scene as follows:
+- Place the fresh item neatly on a round light-wooden plate with a simple rim.
 - Center the plate within a 1:1 square canvas.
-- Use a standard e-commerce fresh product angle: ~30° isometric perspective where the plate appears as an almost full circle with slight perspective.
-- Ensure the plate is fully visible with a small margin and not cropped.
-- Scale the item so it covers ~80% of the plate area for consistent sizing across SKUs.
+- Use a standard e-commerce fresh food angle: approximately 30° isometric view.
+- The plate should appear almost circular with slight perspective.
+- Ensure the plate is fully visible and not cropped.
+- Scale the item so it covers approximately 80% of the plate area for consistent SKU sizing.
 
 Background and lighting:
-- Pure white background (#FFFFFF), completely flat (no gradients, no texture).
-- Soft, even studio lighting with a subtle, natural shadow beneath the wooden plate.
-- Natural food photography look: realistic texture, slight imperfections, soft film grain, matte highlights, no plastic shine.
+- Pure white background (#FFFFFF), completely flat.
+- Soft, even studio lighting.
+- A subtle, natural shadow directly beneath the wooden plate only.
+- Natural food photography look: realistic textures, slight imperfections,
+  soft film grain, matte highlights.
+- No plastic-like shine.
 
 Output:
-- 1:1 square, high-resolution, sharp, photorealistic.
+- Photorealistic commercial grocery image.
+- 1:1 square aspect ratio.
+- Sharp focus, high clarity.
 `.trim();
 
 
-// --------------------
-// Image 1 — Non-Fresh (REPLACE with your new prompt)
-// --------------------
+// -------------------------
+// Prompt 1 — Non-Fresh SKU
+// -------------------------
 export const PROMPT_IMAGE1_NONFRESH = `
-A photorealistic commercial product shot of the item shown in the reference image, viewing it from a 3/4 side angle to display depth and volume.
+A photorealistic commercial product shot of the item shown in the reference image.
 
-Directly reproduce the packaging design, logos, colors, and text exactly as they appear in the original image.
-The object should look 3-dimensional with realistic studio lighting and soft reflections appropriate for its material.
+Reproduce the product EXACTLY as shown:
+- Keep the original packaging shape, structure, colors, logos, and text.
+- Do not remove, blur, or alter any branding or printed information.
 
-Background: Pure white (#FFFFFF).
-Quality: 4k, sharp focus, high fidelity.
+Camera and composition:
+- View the product from a 3/4 front-side angle to show depth and volume.
+- Center the product within a 1:1 square canvas.
+- Ensure the product is fully visible and not cropped.
+- Scale the product to fill approximately 80% of the canvas.
 
-Do not add any extra text, props, stickers, or watermarks. Do not remove or alter existing branding.
+Background and lighting:
+- Pure white background (#FFFFFF).
+- Clean studio lighting with soft reflections appropriate to the material
+  (plastic, glass, carton, metal, etc.).
+- No shadows or only a very soft grounding shadow.
+
+Quality:
+- Commercial e-commerce product photography.
+- High fidelity, sharp focus, realistic materials.
+- 4K-equivalent clarity or higher.
+
+Do NOT add props, text, watermarks, stickers, or extra elements.
 `.trim();
 
 
-// --------------------
-// Image 2 — Shared global rules
-// --------------------
+
+// =====================================
+// PROMPT 2 — PACKAGING VARIANTS
+// =====================================
+
+// -----------------------------
+// Prompt 2 — Global Rules
+// -----------------------------
 export const PROMPT_IMAGE2_GLOBAL = `
 Use the provided image as the source of truth for the product.
 
-Keep the product itself completely unchanged: do not alter shape, cut, color, texture, quantity, or any printed label on the product (if any).
-Only change packaging, background, and lighting.
+Keep the product itself completely unchanged:
+- Do not alter shape, cut, color, texture, quantity, or natural surface details.
+- Do not change branding or printed text if present.
 
-No extra props, no additional items, no text overlays, no watermarks, no stickers, no store labels — except an optional ice pack if explicitly requested.
+Only modify packaging, background, and lighting.
 
 Composition:
 - 1:1 square canvas.
-- Product + packaging centered and fills ~80% of the canvas.
-- Camera: straight 90° top-down flat-lay, 50–70mm equivalent, no distortion.
+- Product + packaging centered.
+- Product occupies approximately 80% of the canvas.
+- Camera angle: straight 90° top-down flat-lay.
+- Lens equivalent: 50–70mm (no distortion).
 
 Background and lighting:
-- Pure white background (#FFFFFF), high-key studio look.
-- Soft diffused lighting, minimal faint shadow directly under the packaging only.
+- Pure white background (#FFFFFF).
+- High-key studio lighting.
+- Very soft, faint shadow directly under the packaging only.
+
+No props, no extra items, no stickers, no watermarks,
+except an optional ice pack when explicitly requested.
 `.trim();
 
 
-// --------------------
-// Image 2 — Packaging options
-// --------------------
-export const PROMPT_IMAGE2_VACUUM = `
+
+// -------------------------------------
+// Prompt 2 — Fresh (Vacuum Sealed)
+// -------------------------------------
+export const PROMPT_IMAGE2_FRESH_VACUUM = `
 ${PROMPT_IMAGE2_GLOBAL}
 
 Packaging:
-- Place the product inside a vacuum-sealed transparent plastic bag, tightly packed so the plastic conforms to the product contours.
-- Plastic should show realistic sealed edges, light wrinkles, folds, and soft reflections.
-- The product must remain clearly visible through the plastic with accurate color and natural texture.
-- Slight condensation/chill effect is allowed but keep it subtle.
+- Place the fresh raw items into a vacuum-sealed transparent plastic bag.
+- Items are tightly packed so the plastic conforms to their contours.
+- Visible skin texture, fat, and natural surface details must remain accurate.
+- Plastic shows realistic sealed edges, light wrinkles, folds, and soft reflections.
+- No labels, no branding, no stickers.
+
+Style:
+- Clean, clinical, hygienic look suitable for e-commerce grocery catalogs.
+- Subtle condensation or chill effect is allowed but must remain natural.
 
 Output:
-- Photorealistic e-commerce grocery pack-shot. High detail, sharp focus.
+- High-detail photorealistic grocery pack-shot.
+- Ultra-sharp focus and realistic textures.
 `.trim();
 
 
-export const PROMPT_IMAGE2_GEMBOLAN = `
+
+// ------------------------------------------------
+// Prompt 2 — Fresh (Vacuum Sealed + Ice Pack)
+// ------------------------------------------------
+export const PROMPT_IMAGE2_FRESH_VACUUM_WITH_ICEPACK = `
+${PROMPT_IMAGE2_FRESH_VACUUM}
+
+Add-on:
+- Add ONE slim white gel ice pack as an additional “what’s in the box” item.
+- Position it at the bottom-right corner of the canvas.
+- Ice pack occupies approximately 10% of the canvas width.
+- Ice pack should be fully visible, clean, and neatly placed.
+- Photographed with the same lighting and perspective.
+`.trim();
+
+
+
+// -------------------------------------
+// Prompt 2 — Fresh (Gembolan Plastic)
+// -------------------------------------
+export const PROMPT_IMAGE2_FRESH_GEMBOLAN = `
 ${PROMPT_IMAGE2_GLOBAL}
 
 Packaging:
-- Place the product into a thin transparent plastic bag that loosely hugs the product.
-- Tie the bag at the top with a simple knot.
-- Natural wrinkles, folds, small air pockets, and subtle glossy reflections.
-- Mild condensation/droplets inside the bag is allowed, keep it realistic and not messy.
+- Place the fresh item inside a thin transparent plastic bag.
+- Bag loosely hugs the item with a natural, irregular shape.
+- Tie the bag at the top using a simple knot.
+- Visible wrinkles, folds, small air pockets.
+- Mild condensation or droplets inside the bag are allowed.
 - No labels, no branding.
 
-Output:
-- Photorealistic e-commerce pack-shot with clean, hygienic look.
+Style:
+- Natural market-style fresh packaging.
+- Clean but informal, realistic everyday grocery look.
 `.trim();
 
 
-export const PROMPT_IMAGE2_MIKA = `
+
+// -------------------------------------
+// Prompt 2 — Fresh (Mika Container)
+// -------------------------------------
+export const PROMPT_IMAGE2_FRESH_MIKA = `
 ${PROMPT_IMAGE2_GLOBAL}
 
 Packaging:
-- Place the product inside a clear rigid PET clamshell container (mika), closed with a hinged lid.
-- Square container with softly rounded corners and a raised rim.
-- Subtle snap-lock closure detail on the front edge.
-- Gentle reflections on the lid; minor micro-scuffs are OK but keep it clean.
+- Place the fresh item inside a clear rigid PET clamshell (mika) container.
+- Container is closed with a hinged lid.
+- Square shape with softly rounded corners and raised rim.
+- Subtle snap-lock detail visible.
+- Lid has gentle reflections and minor micro-scuffs.
 - No labels, no stickers, no branding.
 
-Output:
-- Photorealistic supermarket punnet pack-shot, clean and appetizing.
+Style:
+- Clean supermarket fresh-produce punnet look.
+- Appetizing, orderly, and ready-to-sell.
 `.trim();
 
 
-export const PROMPT_IMAGE2_MESH = `
+
+// -------------------------------------
+// Prompt 2 — Fresh (Mesh Bag)
+// -------------------------------------
+export const PROMPT_IMAGE2_FRESH_MESH = `
 ${PROMPT_IMAGE2_GLOBAL}
 
 Packaging:
-- Place the product inside a thin neon-green plastic mesh bag with a diamond net pattern.
-- Mesh should wrap naturally around the product contours and hang slightly.
-- A simple knot/handle at the top of the mesh bag.
+- Place the fresh item inside a thin neon-green plastic mesh bag.
+- Mesh has a diamond net pattern.
+- Mesh wraps naturally around the item contours.
+- A simple knotted handle at the top.
+- Mesh should hang and sag naturally based on the item weight.
 - No labels, no branding.
 
-Output:
-- Photorealistic e-commerce pack-shot, sharp and clean.
+Style:
+- Common grocery produce mesh packaging.
+- Clean, realistic, and photorealistic.
 `.trim();
 
 
-// --------------------
-// Image 2 — Optional ice pack add-on
-// --------------------
-export const PROMPT_IMAGE2_ICEPACK_ADDON = `
-Add one slim white gel ice pack at the bottom-right corner of the canvas, taking ~10% of canvas width.
-It should be fully visible, placed neatly, and photographed in the same lighting.
-Keep it simple and clean, no extra props.
+
+// -------------------------------------
+// Prompt 2 — Non-Fresh SKU
+// -------------------------------------
+export const PROMPT_IMAGE2_NONFRESH = `
+Use the provided image as the reference.
+
+Keep the product completely unchanged.
+Reproduce the original packaging, branding, colors, logos, and text exactly.
+
+Camera and composition:
+- 3/4 front-side angle to show depth and volume.
+- Centered within a 1:1 square canvas.
+- Product fills approximately 80% of the frame.
+
+Background and lighting:
+- Pure white background (#FFFFFF).
+- Clean studio lighting with soft reflections appropriate to the material.
+
+Quality:
+- Commercial e-commerce product photography.
+- High fidelity, sharp focus, realistic materials.
+
+Do NOT add packaging variants, ice packs, props, or extra elements.
 `.trim();
