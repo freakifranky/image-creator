@@ -1,21 +1,19 @@
 import sharp from "sharp";
 
-type AnyBuffer = Buffer<ArrayBufferLike>;
-
 export type PostOpts = {
-  maxBytes?: number;        // e.g. 250 * 1024
-  transparentBg?: boolean;  // true => remove white background
+  maxBytes?: number;
+  transparentBg?: boolean;
 };
 
 type RemoveBgOpts = {
-  threshold?: number; // 0..255 (higher = stricter white)
-  softness?: number;  // feather band near threshold
+  threshold?: number;
+  softness?: number;
 };
 
 async function removeWhiteBackground(
-  input: AnyBuffer,
+  input: Buffer,
   opts: RemoveBgOpts = {}
-): Promise<AnyBuffer> {
+): Promise<Buffer> {
   const TH = opts.threshold ?? 245;
   const SOFT = opts.softness ?? 12;
 
@@ -26,15 +24,12 @@ async function removeWhiteBackground(
   const h = info.height;
   if (!w || !h) return input;
 
-  const rgba: AnyBuffer = Buffer.from(data); // RGBA
-  const mask = new Uint8Array(w * h); // 1 = background (corner-connected white)
+  const rgba = Buffer.from(data);
+  const mask = new Uint8Array(w * h);
 
-  const isWhite = (idx: number) => {
-    const r = rgba[idx], g = rgba[idx + 1], b = rgba[idx + 2];
-    return r >= TH && g >= TH && b >= TH;
-  };
+  const isWhite = (idx: number) =>
+    rgba[idx] >= TH && rgba[idx + 1] >= TH && rgba[idx + 2] >= TH;
 
-  // Flood-fill from corners to mark ONLY background region
   const q: number[] = [];
   const push = (x: number, y: number) => {
     const p = y * w + x;
@@ -61,64 +56,40 @@ async function removeWhiteBackground(
     if (y < h - 1) push(x, y + 1);
   }
 
-  // Apply alpha
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const p = y * w + x;
-      const idx = p * 4;
-
-      if (mask[p] === 1) {
-        rgba[idx + 3] = 0; // background -> fully transparent
-        continue;
-      }
-
-      // Feather only near boundary (neighbor is background)
-      const near =
-        (x > 0 && mask[p - 1]) ||
-        (x < w - 1 && mask[p + 1]) ||
-        (y > 0 && mask[p - w]) ||
-        (y < h - 1 && mask[p + w]);
-
-      if (near) {
-        const r = rgba[idx], g = rgba[idx + 1], b = rgba[idx + 2];
-        const avg = (r + g + b) / 3;
-        if (avg >= TH - SOFT) {
-          const a = Math.max(0, Math.min(255, ((TH - avg) / SOFT) * 255));
-          rgba[idx + 3] = Math.min(rgba[idx + 3], Math.round(a));
-        }
-      }
+  for (let i = 0; i < w * h; i++) {
+    const idx = i * 4;
+    if (mask[i]) {
+      rgba[idx + 3] = 0;
     }
   }
 
-  const out = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
+  return sharp(rgba, { raw: { width: w, height: h, channels: 4 } })
     .png({ compressionLevel: 9, palette: true })
     .toBuffer();
-
-  return Buffer.from(out);
 }
 
-export async function postprocessPng(input: AnyBuffer, opts: PostOpts): Promise<AnyBuffer> {
-  let buf: AnyBuffer = input;
+export async function postprocessPng(
+  input: Buffer,
+  opts: PostOpts
+): Promise<Buffer> {
+  let buf = input;
 
   if (opts.transparentBg) {
-    buf = await removeWhiteBackground(buf, { threshold: 245, softness: 12 });
+    buf = await removeWhiteBackground(buf);
   }
 
-  // Compress to <= maxBytes by resizing down gradually + palette PNG
   if (opts.maxBytes && buf.length > opts.maxBytes) {
     const meta = await sharp(buf).metadata();
     let width = Math.min(meta.width ?? 1024, 1400);
-    const minWidth = 256;
 
-    while (width >= minWidth) {
+    while (width >= 256) {
       const candidate = await sharp(buf)
         .resize({ width, withoutEnlargement: true })
         .png({ compressionLevel: 9, palette: true })
         .toBuffer();
 
-      buf = Buffer.from(candidate);
-      if (buf.length <= opts.maxBytes) break;
-
+      buf = candidate;
+      if (candidate.length <= opts.maxBytes) break;
       width = Math.floor(width * 0.85);
     }
   }
