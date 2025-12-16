@@ -1,10 +1,34 @@
 import { NextResponse } from "next/server";
-import { PROMPT_IMAGE2 } from "@/lib/prompts";
+import {
+  PROMPT_IMAGE2_VACUUM,
+  PROMPT_IMAGE2_GEMBOLAN,
+  PROMPT_IMAGE2_MIKA,
+  PROMPT_IMAGE2_MESH,
+  PROMPT_IMAGE2_ICEPACK_ADDON,
+} from "@/lib/prompts";
 import { geminiImageEdit } from "@/lib/gemini";
 import { openaiImageEdit } from "@/lib/openai";
 import { postprocessPng } from "@/lib/postprocess";
 
 export const runtime = "nodejs";
+
+type PackagingType = "vacuum" | "gembolan" | "mika" | "mesh";
+
+function pickPrompt(packagingType: PackagingType, addIcePack: boolean) {
+  const base =
+    packagingType === "gembolan"
+      ? PROMPT_IMAGE2_GEMBOLAN
+      : packagingType === "mika"
+      ? PROMPT_IMAGE2_MIKA
+      : packagingType === "mesh"
+      ? PROMPT_IMAGE2_MESH
+      : PROMPT_IMAGE2_VACUUM;
+
+  if (addIcePack && packagingType === "vacuum") {
+    return `${base}\n\n${PROMPT_IMAGE2_ICEPACK_ADDON}`;
+  }
+  return base;
+}
 
 export async function POST(req: Request) {
   try {
@@ -16,6 +40,11 @@ export async function POST(req: Request) {
     const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
 
     const provider = String(form.get("provider") || "gemini"); // "gemini" | "openai"
+
+    const packagingType = String(form.get("packagingType") || "vacuum") as PackagingType;
+    const addIcePack = String(form.get("addIcePack") || "false") === "true";
+
+    const prompt = pickPrompt(packagingType, addIcePack);
 
     const file = form.get("file");
     if (!file || !(file instanceof File)) {
@@ -30,29 +59,25 @@ export async function POST(req: Request) {
     let usedModel = "";
 
     if (provider === "openai") {
-      // ✅ Build File from ArrayBuffer (NOT Node Buffer)
       const f = new File([inputAb], "input.png", { type: mimeType || "image/png" });
-
-      const r = await openaiImageEdit({ prompt: PROMPT_IMAGE2, file: f });
+      const r = await openaiImageEdit({ prompt, file: f });
       outB64 = r.pngBase64;
       usedModel = "gpt-image-1";
     } else {
       const r = await geminiImageEdit({
-        prompt: PROMPT_IMAGE2,
+        prompt,
         mimeType,
         base64: inputBuf.toString("base64"),
         preferPro,
       });
-
       outB64 = r.pngBase64;
       usedModel = r.usedModel;
     }
 
-    // Decode output + postprocess
     let out: Buffer<ArrayBufferLike> = Buffer.from(outB64, "base64");
     out = await postprocessPng(out, { maxBytes, transparentBg });
 
-    // ✅ Convert Buffer -> Uint8Array for NextResponse typing
+    // Buffer -> Uint8Array for NextResponse typing
     const body = new Uint8Array(out);
 
     return new NextResponse(body, {
@@ -62,6 +87,8 @@ export async function POST(req: Request) {
         "Cache-Control": "no-store",
         "X-Used-Model": usedModel || "",
         "X-Output-Bytes": String(out.length),
+        "X-Packaging-Type": packagingType,
+        "X-Ice-Pack": String(addIcePack),
       },
     });
   } catch (e: any) {
