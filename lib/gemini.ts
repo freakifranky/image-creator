@@ -4,7 +4,7 @@ export function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
   
-  // 2026 SDK uses a simplified Client constructor
+  // 2026 unified client setup
   return new GoogleGenAI({ apiKey });
 }
 
@@ -15,13 +15,13 @@ function sleep(ms: number) {
 function isOverloaded(e: any) {
   const status = Number(e?.status || e?.code || 0);
   const msg = String(e?.message || "").toLowerCase();
-  // 429 is the Rate Limit code for the 500 RPD free limit
-  return status === 429 || status === 503 || msg.includes("overloaded") || msg.includes("unavailable");
+  // 429 is the 'Resource Exhausted' code you'll hit on the Free Tier
+  return status === 429 || status === 503 || msg.includes("overloaded");
 }
 
 async function generateWithRetry(ai: GoogleGenAI, args: any) {
   const maxAttempts = 5;
-  const baseDelay = 2000; // Increased to 2s to safely stay within free tier RPM
+  const baseDelay = 2000; // 2s delay to safely respect 15 RPM
   let lastErr: any = null;
 
   for (let i = 1; i <= maxAttempts; i++) {
@@ -30,6 +30,7 @@ async function generateWithRetry(ai: GoogleGenAI, args: any) {
     } catch (e: any) {
       lastErr = e;
       if (!isOverloaded(e) || i === maxAttempts) break;
+      // Exponential backoff
       await sleep(baseDelay * Math.pow(2, i - 1) + Math.floor(Math.random() * 500));
     }
   }
@@ -45,8 +46,8 @@ export async function geminiImageEdit(params: {
 
   /**
    * 2026 FREE TIER MODEL:
-   * 'gemini-2.5-flash-image' is the specific model for Image-to-Image.
-   * Note: gemini-3-pro and newer 'Pro' versions do NOT have a free API tier.
+   * 'gemini-2.5-flash-image' (Nano Banana)
+   * This is the stable successor to the preview models you were using.
    */
   const modelId = "gemini-2.5-flash-image";
 
@@ -63,7 +64,7 @@ export async function geminiImageEdit(params: {
         },
       ],
       config: {
-        // IMAGE modality is required for image-to-image output
+        // Required for image-to-image output
         responseModalities: ["IMAGE"],
       },
     });
@@ -72,8 +73,8 @@ export async function geminiImageEdit(params: {
     const imagePart = candidate?.content?.parts?.find((p: any) => p?.inlineData?.data);
 
     if (!imagePart?.inlineData?.data) {
-      const textRefusal = candidate?.content?.parts?.find((p: any) => p?.text)?.text;
-      throw new Error(textRefusal || "Free tier: Image generation refused by safety filters.");
+      const refusal = candidate?.content?.parts?.find((p: any) => p?.text)?.text;
+      throw new Error(refusal || "Model did not return an image. Check prompt safety.");
     }
 
     return {
