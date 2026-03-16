@@ -66,7 +66,7 @@ export async function POST(req: Request) {
       const r = await geminiImageEdit({
         prompt,
         mimeType,
-        base64: inputBuf.toString("base64"),
+        base64: inputBuf.toString("base64")
         //preferPro,
       });
 
