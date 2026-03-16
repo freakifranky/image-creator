@@ -43,6 +43,7 @@ export async function geminiImageEdit(params: {
   prompt: string;
   mimeType: string;
   base64: string;
+  preferPro?: boolean;//
 }) {
   const ai = getGeminiClient();
 
