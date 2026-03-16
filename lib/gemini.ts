@@ -1,9 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai"; // Standard package name
+// Recommendation: Migration to '@google/genai' for the newest features
+import { GoogleGenAI } from "@google/genai"; 
 
 export function getGeminiClient() {
-  if (!process.env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
-  // Ensure you are using the standard constructor
-  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+  
+  // New syntax: Client accepts an options object
+  return new GoogleGenAI({ apiKey });
 }
 
 function sleep(ms: number) {
@@ -11,25 +14,25 @@ function sleep(ms: number) {
 }
 
 function isOverloaded(e: any) {
-  const msg = String(e?.message || "");
   const status = Number(e?.status || e?.code || 0);
-  // 429 is the most common code for "Rate Limit Reached" on the Free Tier
-  return status === 429 || status === 503 || msg.includes("UNAVAILABLE") || msg.toLowerCase().includes("overloaded");
+  const msg = String(e?.message || "").toLowerCase();
+  // 429 is the "Rate Limit" code you'll hit most on the Free Tier
+  return status === 429 || status === 503 || msg.includes("overloaded") || msg.includes("unavailable");
 }
 
-async function generateWithRetry(modelInstance: any, args: any) {
-  const maxAttempts = 4;
-  const baseDelay = 1000; // Increased base delay for Free Tier limits
+async function generateWithRetry(ai: GoogleGenAI, args: any) {
+  const maxAttempts = 5; // Slightly more attempts for free tier instability
+  const baseDelay = 1500; // 1.5s base delay to respect the 15 RPM limit
   let lastErr: any = null;
 
   for (let i = 1; i <= maxAttempts; i++) {
     try {
-      // Note: In the official SDK, you call generateContent on the model instance
-      return await modelInstance.generateContent(args);
+      // New SDK uses 'models.generateContent' directly
+      return await ai.models.generateContent(args);
     } catch (e: any) {
       lastErr = e;
       if (!isOverloaded(e) || i === maxAttempts) break;
-      // Exponential backoff
+      // Exponential backoff: 1.5s, 3s, 6s...
       await sleep(baseDelay * Math.pow(2, i - 1) + Math.floor(Math.random() * 500));
     }
   }
@@ -42,23 +45,22 @@ export async function geminiImageEdit(params: {
   base64: string;
   preferPro?: boolean;
 }) {
-  const genAI = getGeminiClient();
+  const ai = getGeminiClient();
 
   /**
-   * FREE TIER MODELS:
-   * 1. gemini-1.5-flash: Best balance of speed and multimodal capability.
-   * 2. gemini-1.5-flash-8b: Faster, lower limits, good for simple edits.
+   * FREE MODELS (Stable for 2026):
+   * 'gemini-1.5-flash' is the primary free model.
+   * 'gemini-1.5-flash-8b' is the lightweight backup.
    */
   const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-flash-8b"];
 
   let resp: any;
   let usedModel = "";
 
-  for (const modelName of modelsToTry) {
+  for (const modelId of modelsToTry) {
     try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      
-      resp = await generateWithRetry(model, {
+      resp = await generateWithRetry(ai, {
+        model: modelId,
         contents: [
           {
             role: "user",
@@ -68,32 +70,26 @@ export async function geminiImageEdit(params: {
             ],
           },
         ],
-        // Generation configuration for multimodal output
-        generationConfig: {
-          responseModalities: ["image"],
-          // On the free tier, complex image configs might trigger errors; 
-          // keeping it simple is best.
+        config: {
+          // Instructs the model to output an image instead of text
+          responseModalities: ["IMAGE"],
         },
       });
-      
-      usedModel = modelName;
+      usedModel = modelId;
       break;
     } catch (e: any) {
-      // If we've tried all models, throw the last error
-      if (modelName === modelsToTry[modelsToTry.length - 1]) throw e;
-      console.warn(`Model ${modelName} failed, trying next...`);
+      if (modelId === modelsToTry[modelsToTry.length - 1]) throw e;
+      console.warn(`Model ${modelId} failed/throttled, trying next...`);
     }
   }
 
-  const response = await resp.response;
-  const parts = response.candidates?.[0]?.content?.parts || [];
-  
-  // Look for the returned image data
-  const imagePart = parts.find((p: any) => p?.inlineData?.data);
-  
+  // New SDK structure: images are returned in 'generatedImage' or 'inlineData'
+  const candidate = resp?.candidates?.[0];
+  const imagePart = candidate?.content?.parts?.find((p: any) => p?.inlineData?.data);
+
   if (!imagePart?.inlineData?.data) {
-    const textPart = parts.find((p: any) => p?.text)?.text;
-    throw new Error(textPart || "Gemini did not return an image. It might have refused the prompt or reached a safety filter.");
+    const textExplanation = candidate?.content?.parts?.find((p: any) => p?.text)?.text;
+    throw new Error(textExplanation || "Free tier: Image generation refused or limit reached.");
   }
 
   return {
