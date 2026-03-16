@@ -1,8 +1,9 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai"; // Standard package name
 
 export function getGeminiClient() {
   if (!process.env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY");
-  return new GoogleGenAI({});
+  // Ensure you are using the standard constructor
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 }
 
 function sleep(ms: number) {
@@ -12,21 +13,24 @@ function sleep(ms: number) {
 function isOverloaded(e: any) {
   const msg = String(e?.message || "");
   const status = Number(e?.status || e?.code || 0);
-  return status === 503 || msg.includes("UNAVAILABLE") || msg.toLowerCase().includes("overloaded");
+  // 429 is the most common code for "Rate Limit Reached" on the Free Tier
+  return status === 429 || status === 503 || msg.includes("UNAVAILABLE") || msg.toLowerCase().includes("overloaded");
 }
 
-async function generateWithRetry(ai: GoogleGenAI, args: any) {
+async function generateWithRetry(modelInstance: any, args: any) {
   const maxAttempts = 4;
-  const baseDelay = 600;
+  const baseDelay = 1000; // Increased base delay for Free Tier limits
   let lastErr: any = null;
 
   for (let i = 1; i <= maxAttempts; i++) {
     try {
-      return await ai.models.generateContent(args);
+      // Note: In the official SDK, you call generateContent on the model instance
+      return await modelInstance.generateContent(args);
     } catch (e: any) {
       lastErr = e;
       if (!isOverloaded(e) || i === maxAttempts) break;
-      await sleep(baseDelay * Math.pow(2, i - 1) + Math.floor(Math.random() * 250));
+      // Exponential backoff
+      await sleep(baseDelay * Math.pow(2, i - 1) + Math.floor(Math.random() * 500));
     }
   }
   throw lastErr;
@@ -38,19 +42,23 @@ export async function geminiImageEdit(params: {
   base64: string;
   preferPro?: boolean;
 }) {
-  const ai = getGeminiClient();
+  const genAI = getGeminiClient();
 
-  const modelsToTry = params.preferPro
-    ? ["gemini-3-pro-image-preview", "gemini-2.5-flash-image"]
-    : ["gemini-2.5-flash-image", "gemini-3-pro-image-preview"];
+  /**
+   * FREE TIER MODELS:
+   * 1. gemini-1.5-flash: Best balance of speed and multimodal capability.
+   * 2. gemini-1.5-flash-8b: Faster, lower limits, good for simple edits.
+   */
+  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-flash-8b"];
 
   let resp: any;
   let usedModel = "";
 
-  for (const model of modelsToTry) {
+  for (const modelName of modelsToTry) {
     try {
-      resp = await generateWithRetry(ai, {
-        model,
+      const model = genAI.getGenerativeModel({ model: modelName });
+      
+      resp = await generateWithRetry(model, {
         contents: [
           {
             role: "user",
@@ -60,24 +68,32 @@ export async function geminiImageEdit(params: {
             ],
           },
         ],
-        // IMPORTANT: keep config minimal for image-to-image to avoid INVALID_ARGUMENT
-        config: {
-          responseModalities: ["Image"],
-          imageConfig: { aspectRatio: "1:1" },
+        // Generation configuration for multimodal output
+        generationConfig: {
+          responseModalities: ["image"],
+          // On the free tier, complex image configs might trigger errors; 
+          // keeping it simple is best.
         },
       });
-      usedModel = model;
+      
+      usedModel = modelName;
       break;
     } catch (e: any) {
-      if (model === modelsToTry[modelsToTry.length - 1]) throw e;
+      // If we've tried all models, throw the last error
+      if (modelName === modelsToTry[modelsToTry.length - 1]) throw e;
+      console.warn(`Model ${modelName} failed, trying next...`);
     }
   }
 
-  const parts = resp?.candidates?.[0]?.content?.parts || [];
+  const response = await resp.response;
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  
+  // Look for the returned image data
   const imagePart = parts.find((p: any) => p?.inlineData?.data);
+  
   if (!imagePart?.inlineData?.data) {
     const textPart = parts.find((p: any) => p?.text)?.text;
-    throw new Error(textPart || "No image returned from Gemini");
+    throw new Error(textPart || "Gemini did not return an image. It might have refused the prompt or reached a safety filter.");
   }
 
   return {
