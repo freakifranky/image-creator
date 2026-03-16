@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
 
     const provider = String(form.get("provider") || "gemini");
-    const preferPro = form.get("preferPro") === "true";
+    // const preferPro = form.get("preferPro") === "true";
     const transparentBg = form.get("transparentBg") === "true";
 
     const maxKb = Number(form.get("maxKb") || 0);
@@ -67,8 +67,8 @@ export async function POST(req: Request) {
       const r = await geminiImageEdit({
         prompt,
         base64: inputBuf.toString("base64"),
-        mimeType: file.type,
-        preferPro,
+        mimeType: file.type
+        // preferPro,
       });
       base64 = r.pngBase64;
       usedModel = r.usedModel;
