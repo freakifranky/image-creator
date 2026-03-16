@@ -1,32 +1,88 @@
-{
-  "name": "sku-image1",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@google/genai": "^1.33.0",
-    "next": "16.0.10",
-    "openai": "^6.10.0",
-    "react": "19.2.1",
-    "react-dom": "19.2.1",
-    "sharp": "^0.34.5"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "autoprefixer": "^10.4.23",
-    "babel-plugin-react-compiler": "1.0.0",
-    "eslint": "^9",
-    "eslint-config-next": "16.0.10",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.18",
-    "typescript": "^5"
+import { GoogleGenAI } from "@google/genai";
+
+export function getGeminiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
+  
+  // v1.33.0 uses this client constructor
+  return new GoogleGenAI({ apiKey });
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isOverloaded(e: any) {
+  const status = Number(e?.status || e?.code || 0);
+  const msg = String(e?.message || "").toLowerCase();
+  // 429 is the most common error when you hit the Free Tier limits
+  return status === 429 || status === 503 || msg.includes("overloaded");
+}
+
+async function generateWithRetry(ai: GoogleGenAI, args: any) {
+  const maxAttempts = 4;
+  const baseDelay = 2000; // 2 seconds to respect the 10-15 RPM free limit
+  let lastErr: any = null;
+
+  for (let i = 1; i <= maxAttempts; i++) {
+    try {
+      // In @google/genai v1.x, we call generateContent directly via models
+      return await ai.models.generateContent(args);
+    } catch (e: any) {
+      lastErr = e;
+      if (!isOverloaded(e) || i === maxAttempts) break;
+      await sleep(baseDelay * Math.pow(2, i - 1) + Math.floor(Math.random() * 500));
+    }
+  }
+  throw lastErr;
+}
+
+export async function geminiImageEdit(params: {
+  prompt: string;
+  mimeType: string;
+  base64: string;
+}) {
+  const ai = getGeminiClient();
+
+  /**
+   * FREE TIER MODEL FOR 2026:
+   * 'gemini-2.5-flash-image' 
+   * Provides 500 requests per day for FREE.
+   */
+  const modelId = "gemini-2.5-flash-image";
+
+  try {
+    const resp = await generateWithRetry(ai, {
+      model: modelId,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: params.prompt },
+            { inlineData: { mimeType: params.mimeType, data: params.base64 } },
+          ],
+        },
+      ],
+      config: {
+        // This tells the model to return an Image instead of text
+        responseModalities: ["IMAGE"],
+      },
+    });
+
+    const candidate = resp?.candidates?.[0];
+    const imagePart = candidate?.content?.parts?.find((p: any) => p?.inlineData?.data);
+
+    if (!imagePart?.inlineData?.data) {
+      const textResponse = candidate?.content?.parts?.find((p: any) => p?.text)?.text;
+      throw new Error(textResponse || "Free tier quota reached or image refused by safety filters.");
+    }
+
+    return {
+      usedModel: modelId,
+      pngBase64: imagePart.inlineData.data as string,
+    };
+  } catch (e: any) {
+    console.error("Gemini Error:", e);
+    throw e;
   }
 }
