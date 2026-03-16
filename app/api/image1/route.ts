@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
 
-    const preferPro = String(form.get("preferPro") || "false") === "true";
+    //const preferPro = String(form.get("preferPro") || "false") === "true";
     const transparentBg = String(form.get("transparentBg") || "false") === "true";
     const maxKb = Number(form.get("maxKb") || 0);
     const maxBytes = maxKb > 0 ? Math.floor(maxKb * 1024) : undefined;
