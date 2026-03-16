@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         prompt,
         mimeType,
         base64: inputBuf.toString("base64"),
-        preferPro,
+        //preferPro,
       });
 
       outB64 = r.pngBase64;
