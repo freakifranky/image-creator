@@ -51,7 +51,7 @@ export async function geminiImageEdit(params: {
    * To get your free API key: https://aistudio.google.com/apikey
    * No credit card needed.
    */
-  const modelId = "gemini-2.0-flash-exp-image-generation";
+  const modelId = "gemini-2.5-flash-image";
 
   try {
     const resp = await generateWithRetry(ai, {
