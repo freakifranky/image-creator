@@ -1,9 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-/**
- * FIXED: 2026 SDK Client Initialization
- * Uses the modern unified client architecture.
- */
 export function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("Missing GEMINI_API_KEY");
@@ -17,18 +13,16 @@ function sleep(ms: number) {
 function isOverloaded(e: any) {
   const status = Number(e?.status || e?.code || 0);
   const msg = String(e?.message || "").toLowerCase();
-  // 429 is the 'Resource Exhausted' code for the 500/day free limit.
   return status === 429 || status === 503 || msg.includes("overloaded");
 }
 
 async function generateWithRetry(ai: GoogleGenAI, args: any) {
   const maxAttempts = 5;
-  const baseDelay = 2000; // 2s delay keeps you under the 15 Requests Per Minute free limit.
+  const baseDelay = 4000; // 4s — free tier is 2 IPM, so space out retries
   let lastErr: any = null;
 
   for (let i = 1; i <= maxAttempts; i++) {
     try {
-      // NEW: In v1.x, call generateContent directly on the client.models service.
       return await ai.models.generateContent(args);
     } catch (e: any) {
       lastErr = e;
@@ -43,16 +37,21 @@ export async function geminiImageEdit(params: {
   prompt: string;
   mimeType: string;
   base64: string;
-  preferPro?: boolean;//
+  preferPro?: boolean;
 }) {
   const ai = getGeminiClient();
 
   /**
-   * THE "FREE CHAMPION" MODEL:
-   * 'gemini-2.5-flash-image' (Nano Banana)
-   * This is the only model with 500 free requests per day in 2026.
+   * FREE MODEL (no billing required):
+   * 'gemini-2.0-flash-exp-image-generation'
+   * - Free tier: ~500 requests/day via Google AI Studio key
+   * - Supports image-to-image editing (send input image + prompt)
+   * - Rate limit: 2 images/min on free tier, so we use 4s base delay above
+   *
+   * To get your free API key: https://aistudio.google.com/apikey
+   * No credit card needed.
    */
-  const modelId = "gemini-2.5-flash-image";
+  const modelId = "gemini-2.0-flash-exp-image-generation";
 
   try {
     const resp = await generateWithRetry(ai, {
@@ -61,14 +60,14 @@ export async function geminiImageEdit(params: {
         {
           role: "user",
           parts: [
-            // PRO TIP: Put the image data BEFORE the text for better 2.5 editing.
+            // Image BEFORE text for better editing results
             { inlineData: { mimeType: params.mimeType, data: params.base64 } },
             { text: params.prompt },
           ],
         },
       ],
       config: {
-        // MANDATORY: Triggers the image generation engine instead of text output.
+        // REQUIRED: triggers image output instead of text-only
         responseModalities: ["IMAGE"],
       },
     });
@@ -78,7 +77,9 @@ export async function geminiImageEdit(params: {
 
     if (!imagePart?.inlineData?.data) {
       const refusalText = candidate?.content?.parts?.find((p: any) => p?.text)?.text;
-      throw new Error(refusalText || "Free Tier: Limit reached or image refused by safety filters.");
+      throw new Error(
+        refusalText || "No image returned. Free tier may be at capacity — try again in a minute."
+      );
     }
 
     return {
