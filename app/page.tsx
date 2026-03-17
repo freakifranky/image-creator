@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Provider = "gemini" | "openai";
 type Mode = "upload" | "url";
 type SkuType = "fresh" | "non_fresh";
 type Packaging = "vacuum" | "gembolan" | "mika" | "mesh";
@@ -13,11 +12,8 @@ function classNames(...xs: Array<string | false | null | undefined>) {
 
 async function readError(res: Response) {
   const text = await res.text();
-  if (res.status === 403 && text.toLowerCase().includes("openai")) {
-    return "OpenAI image model is gated (org not verified). Switch provider to Gemini.";
-  }
   if (res.status === 503) {
-    return "Model is busy/overloaded. Please retry.";
+    return "Model is busy / rate-limited. Please wait ~30 seconds and retry.";
   }
   return text || `Request failed (${res.status})`;
 }
@@ -26,8 +22,6 @@ export default function Page() {
   // Step 1 inputs
   const [skuType, setSkuType] = useState<SkuType>("fresh");
   const [mode1, setMode1] = useState<Mode>("upload");
-  const [provider1, setProvider1] = useState<Provider>("gemini");
-  const [preferPro1, setPreferPro1] = useState(false);
   const [file1, setFile1] = useState<File | null>(null);
   const [url1, setUrl1] = useState("");
   const [maxKb1, setMaxKb1] = useState<number>(250);
@@ -41,8 +35,6 @@ export default function Page() {
   const [usedModel1, setUsedModel1] = useState<string>("");
 
   // Step 2 inputs
-  const [provider2, setProvider2] = useState<Provider>("gemini");
-  const [preferPro2, setPreferPro2] = useState(false);
   const [useImg1AsInput, setUseImg1AsInput] = useState(true);
   const [file2, setFile2] = useState<File | null>(null);
   const [maxKb2, setMaxKb2] = useState<number>(250);
@@ -61,7 +53,6 @@ export default function Page() {
   const canUseImg1 = useMemo(() => Boolean(img1Blob), [img1Blob]);
   const iceAllowed = packagingType === "vacuum";
 
-  // ✅ Prevent stale "ice pack true" when switching packaging
   useEffect(() => {
     if (packagingType !== "vacuum" && addIcePack) setAddIcePack(false);
   }, [packagingType, addIcePack]);
@@ -76,8 +67,7 @@ export default function Page() {
       const fd = new FormData();
       fd.append("skuType", skuType);
       fd.append("mode", mode1);
-      fd.append("provider", provider1);
-      fd.append("preferPro", String(preferPro1));
+      fd.append("provider", "gemini"); // always Gemini
       fd.append("maxKb", String(maxKb1));
       fd.append("transparentBg", String(transparentBg1));
 
@@ -114,20 +104,16 @@ export default function Page() {
       if (img2Url) URL.revokeObjectURL(img2Url);
 
       const fd = new FormData();
-      fd.append("provider", provider2);
-      fd.append("preferPro", String(preferPro2));
+      fd.append("provider", "gemini"); // always Gemini
       fd.append("maxKb", String(maxKb2));
       fd.append("skuType", skuType);
       fd.append("transparentBg", String(transparentBg2));
-
-      // Packaging controls
       fd.append("packagingType", packagingType);
       fd.append("addIcePack", String(iceAllowed ? addIcePack : false));
 
       let inputBlob: Blob;
-
       if (useImg1AsInput) {
-        if (!img1Blob) throw new Error("Generate Image 1 first (or uncheck and upload Image 2 input).");
+        if (!img1Blob) throw new Error("Generate Image 1 first (or uncheck and upload a separate image).");
         inputBlob = img1Blob;
       } else {
         if (!file2) throw new Error("Please upload an image for Image 2 input.");
@@ -161,44 +147,21 @@ export default function Page() {
         <header className="mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">SKU Studio</h1>
           <p className="mt-2 text-neutral-400">
-            Step 1 generates <span className="text-neutral-200">Image 1</span>. Step 2 generates{" "}
-            <span className="text-neutral-200">Image 2</span> (Prompt 2) using Image 1 or another input.
+            Step 1 generates <span className="text-neutral-200">Image 1</span> (background cleanup).
+            Step 2 generates <span className="text-neutral-200">Image 2</span> (packaging transformation).
           </p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-emerald-800 bg-emerald-950/40 px-3 py-2 text-sm text-emerald-300">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+            Using Gemini 2.0 Flash (free tier · ~500 images/day · no credit card needed)
+          </div>
         </header>
 
         <div className="grid gap-6 md:grid-cols-2">
           {/* Step 1 */}
           <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Step 1 — Generate Image 1</h2>
-                <p className="text-sm text-neutral-400">Fresh / Non-Fresh cleanup using Prompt 1.</p>
-              </div>
-
-              <select
-                className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
-                value={provider1}
-                onChange={(e) => setProvider1(e.target.value as Provider)}
-              >
-                <option value="gemini">Gemini (Nano Banana)</option>
-                <option value="openai">ChatGPT (OpenAI)</option>
-              </select>
-            </div>
-
-            {/* Pro toggle */}
-            <div className="mt-3">
-              <label className="flex items-center gap-2 text-sm text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={preferPro1}
-                  onChange={(e) => setPreferPro1(e.target.checked)}
-                  disabled={provider1 !== "gemini"}
-                />
-                High quality (Nano Banana Pro)
-              </label>
-              {provider1 !== "gemini" && (
-                <p className="mt-1 text-xs text-neutral-500">Pro toggle applies to Gemini only.</p>
-              )}
+            <div>
+              <h2 className="text-lg font-semibold">Step 1 — Generate Image 1</h2>
+              <p className="text-sm text-neutral-400">Fresh / Non-Fresh cleanup using Prompt 1.</p>
             </div>
 
             <div className="mt-3 grid gap-2">
@@ -212,7 +175,7 @@ export default function Page() {
                   onChange={(e) => setMaxKb1(Number(e.target.value || 0))}
                   className="w-28 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
                 />
-                <span className="text-xs text-neutral-500">Set 250 for your system limit</span>
+                <span className="text-xs text-neutral-500">250 for GoMart limit</span>
               </div>
 
               <label className="flex items-center gap-2 text-sm text-neutral-300">
@@ -278,7 +241,7 @@ export default function Page() {
                     : "bg-white text-neutral-900 hover:bg-neutral-200"
                 )}
               >
-                {busy1 ? "Generating..." : "Generate Image 1"}
+                {busy1 ? "Generating… (may take ~30s)" : "Generate Image 1"}
               </button>
 
               {err1 && (
@@ -287,13 +250,11 @@ export default function Page() {
                 </div>
               )}
 
-              <div className="mt-2 text-xs text-neutral-400">
+              <div className="mt-1 text-xs text-neutral-500">
                 {usedModel1 ? (
-                  <>
-                    Used model: <span className="text-neutral-200">{usedModel1}</span>
-                  </>
+                  <>Model: <span className="text-neutral-300">{usedModel1}</span></>
                 ) : (
-                  <>Used model: —</>
+                  <>Free tier: ~2 images/min · 500/day</>
                 )}
               </div>
 
@@ -321,36 +282,9 @@ export default function Page() {
 
           {/* Step 2 */}
           <section className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold">Step 2 — Generate Image 2</h2>
-                <p className="text-sm text-neutral-400">Packaging transformation using Prompt 2.</p>
-              </div>
-
-              <select
-                className="rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
-                value={provider2}
-                onChange={(e) => setProvider2(e.target.value as Provider)}
-              >
-                <option value="gemini">Gemini (Nano Banana)</option>
-                <option value="openai">ChatGPT (OpenAI)</option>
-              </select>
-            </div>
-
-            {/* Pro toggle */}
-            <div className="mt-3">
-              <label className="flex items-center gap-2 text-sm text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={preferPro2}
-                  onChange={(e) => setPreferPro2(e.target.checked)}
-                  disabled={provider2 !== "gemini"}
-                />
-                High quality (Nano Banana Pro)
-              </label>
-              {provider2 !== "gemini" && (
-                <p className="mt-1 text-xs text-neutral-500">Pro toggle applies to Gemini only.</p>
-              )}
+            <div>
+              <h2 className="text-lg font-semibold">Step 2 — Generate Image 2</h2>
+              <p className="text-sm text-neutral-400">Packaging transformation using Prompt 2.</p>
             </div>
 
             <div className="mt-3 grid gap-2">
@@ -364,7 +298,7 @@ export default function Page() {
                   onChange={(e) => setMaxKb2(Number(e.target.value || 0))}
                   className="w-28 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm"
                 />
-                <span className="text-xs text-neutral-500">Set 250 for your system limit</span>
+                <span className="text-xs text-neutral-500">250 for GoMart limit</span>
               </div>
 
               <label className="flex items-center gap-2 text-sm text-neutral-300">
@@ -381,38 +315,23 @@ export default function Page() {
             <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-950/40 p-3">
               <p className="text-sm font-semibold">Packaging type</p>
               <div className="mt-2 grid gap-2">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    checked={packagingType === "vacuum"}
-                    onChange={() => setPackagingType("vacuum")}
-                  />
-                  Vacuum sealed (transparent)
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    checked={packagingType === "gembolan"}
-                    onChange={() => setPackagingType("gembolan")}
-                  />
-                  Gembolan plastic (tied bag)
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    checked={packagingType === "mika"}
-                    onChange={() => setPackagingType("mika")}
-                  />
-                  Mika container (clamshell)
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="radio"
-                    checked={packagingType === "mesh"}
-                    onChange={() => setPackagingType("mesh")}
-                  />
-                  Green mesh bag
-                </label>
+                {(
+                  [
+                    ["vacuum", "Vacuum sealed (transparent)"],
+                    ["gembolan", "Gembolan plastic (tied bag)"],
+                    ["mika", "Mika container (clamshell)"],
+                    ["mesh", "Green mesh bag"],
+                  ] as [Packaging, string][]
+                ).map(([val, label]) => (
+                  <label key={val} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      checked={packagingType === val}
+                      onChange={() => setPackagingType(val)}
+                    />
+                    {label}
+                  </label>
+                ))}
 
                 <label className={classNames("mt-2 flex items-center gap-2 text-sm", !iceAllowed && "opacity-50")}>
                   <input
@@ -465,7 +384,7 @@ export default function Page() {
                     : "bg-white text-neutral-900 hover:bg-neutral-200"
                 )}
               >
-                {busy2 ? "Generating..." : "Generate Image 2"}
+                {busy2 ? "Generating… (may take ~30s)" : "Generate Image 2"}
               </button>
 
               {err2 && (
@@ -474,13 +393,11 @@ export default function Page() {
                 </div>
               )}
 
-              <div className="mt-2 text-xs text-neutral-400">
+              <div className="mt-1 text-xs text-neutral-500">
                 {usedModel2 ? (
-                  <>
-                    Used model: <span className="text-neutral-200">{usedModel2}</span>
-                  </>
+                  <>Model: <span className="text-neutral-300">{usedModel2}</span></>
                 ) : (
-                  <>Used model: —</>
+                  <>Free tier: ~2 images/min · 500/day</>
                 )}
               </div>
 
@@ -508,7 +425,8 @@ export default function Page() {
         </div>
 
         <footer className="mt-10 text-xs text-neutral-500">
-          Tip: If OpenAI image fails with 403 (org not verified), switch provider to Gemini.
+          Free Gemini API key: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-300">aistudio.google.com/apikey</a>
+          {" · "}Rate limited to ~2 images/min on free tier — if you get a 503, wait 30 seconds and retry.
         </footer>
       </div>
     </main>
